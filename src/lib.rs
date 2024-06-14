@@ -1,2 +1,3 @@
-mod download;
-pub use download::*;
+mod downloader;
+
+pub use downloader::*;

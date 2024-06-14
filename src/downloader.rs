@@ -1,7 +1,7 @@
 use std::cmp::PartialEq;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::{fs, thread};
+use std::{fs};
 use std::fs::File;
 use std::io::Write;
 use futures_util::StreamExt;
@@ -73,20 +73,22 @@ impl DownloaderClient {
 
     /// Starts a loop in a new thread to handle download tasks
     fn start_loop(&self) {
-        let clone = Arc::clone(&self.0);
+        loop {
+            let clone = Arc::clone(&self.0);
 
-        thread::spawn(move || {
-            loop {
-                let lock = clone.lock().unwrap();
+            tokio::spawn( async move {
+                loop {
+                    let mut lock = clone.lock().unwrap();
 
-                if lock.status == DownloadStatus::Pending && !lock.queue.size()==0 {
-                    if let Ok(download_info) = json::parse(&lock.current_target) {
-                    } else {
-                        eprintln!("Error parsing JSON: {}", lock.current_target);
-                    }
+                    if lock.status == DownloadStatus::Pending && !lock.queue.size()==0 {
+                        let new_target = lock.queue.peek();
+                        lock.current_target = new_target.unwrap();
+
+                        let _ = lock.
+                    };
                 };
-            };
-        });
+            });
+        }
     }
 
     /// Processes the next item in the queue
