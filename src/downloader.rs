@@ -187,11 +187,14 @@ impl DownloaderClient {
                 println!("Download speed: {:.2} KB/s, Progress: {:.2}%", speed / 1024.0, percent);
 
                 lock.current_percent = percent;
-                lock.current_speed = speed / 1024.0;
+                lock.current_speed = (speed / 1024.0).floor();
 
                 downloaded_bytes = 0;
                 last_time = Instant::now();
             }
+
+            downloaded_bytes = 0;
+            last_time = Instant::now();
 
             fs::write(&progress_path, start_byte.to_string()).map_err(|e| e.to_string())?;
         }
