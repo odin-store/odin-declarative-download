@@ -2,19 +2,17 @@ use std::cmp::PartialEq;
 use std::path::Path;
 use std::sync::Arc;
 use std::{fs};
-use std::env::consts::ARCH;
-use std::fmt::format;
 use std::fs::File;
 use std::io::Write;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use base64::read::DecoderReader;
 use futures_util::StreamExt;
 use queues::{IsQueue, Queue, queue};
 use reqwest::Client;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use json::{JsonValue, object};
+use tokio::spawn;
 
 #[derive(Debug, Clone)]
 enum DownloadStatus {
@@ -90,10 +88,10 @@ impl DownloaderClient {
     }
 
     pub fn start_download(&self, target: String) {
-        let mut cloned_wrapper = Arc::clone(&self.0);
+        let cloned_wrapper = Arc::clone(&self.0);
         let target = Self::decode_target(target);
 
-        tokio::spawn(async move {
+        spawn(async move {
             let client = DownloaderClient(cloned_wrapper);
 
             println!("url: {}, path: {}",target["url"],target["file_path"] );
@@ -115,14 +113,34 @@ impl DownloaderClient {
         json::stringify(info_object)
     }
 
-    pub fn decode_target(target: String)-> JsonValue {
+    pub async fn pause_download(&self) {
+        let lock = self.0.lock().await;
+
+        lock.status = DownloadStatus::Paused;
+    }
+
+    pub async fn resume_download(&self) {
+        let lock = self.0.lock().await;
+        let target = Self::decode_target(lock.current_target.to_string());
+        let cloned_wrapper = Arc::clone(&self.0);
+
+        spawn(async move {
+            let client = DownloaderClient(cloned_wrapper);
+
+            println!("url: {}, path: {}",target["url"],target["file_path"] );
+
+            client.download(target["url"].to_string(),target["file_path"].to_string()).await.expect("Error");
+        });
+    }
+
+    fn decode_target(target: String)-> JsonValue {
         let decoded_bytes = BASE64_STANDARD.decode(target).unwrap();
         let decoded_str = String::from_utf8(decoded_bytes).unwrap();
         println!("decoded : {}",decoded_str);
         json::parse(&decoded_str).unwrap()
     }
 
-    pub fn encode_target(id: String, url:String, file_path:String)-> String {
+    fn encode_target(id: String, url:String, file_path:String)-> String {
         let stringified_target = json::stringify(object! {
             id: id,
             url: url,
@@ -202,9 +220,9 @@ impl DownloaderClient {
         fs::remove_file(&progress_path).map_err(|e| e.to_string())?;
 
 
-        let mut cloned_wrapper = Arc::clone(&self.0);
+        let cloned_wrapper = Arc::clone(&self.0);
 
-        tokio::spawn(async move {
+        spawn(async move {
             let client = DownloaderClient(cloned_wrapper);
             client.extract(Path::new(&file_path)).await;
         });
@@ -228,6 +246,7 @@ impl DownloaderClient {
             lock.status = DownloadStatus::Error;
             return;
         }
+        self.delete(path).await;
     }
 
     async fn delete(&self, path: &Path) {
