@@ -114,7 +114,7 @@ impl DownloaderClient {
     }
 
     pub async fn pause_download(&self) {
-        let lock = self.0.lock().await;
+        let mut lock = self.0.lock().await;
 
         lock.status = DownloadStatus::Paused;
     }
