@@ -217,6 +217,7 @@ dependencies = [
  "base64",
  "futures-util",
  "json",
+ "log",
  "queues",
  "reqwest",
  "tokio",
