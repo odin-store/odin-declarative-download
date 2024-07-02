@@ -57,15 +57,14 @@ impl DownloaderClient {
 
         let target = Self::encode_target(id, url, total_size, file_path);
 
+        lock.queue.add(target).expect("Cannot add target to download queue.");
         if lock.status == DownloadStatus::Pending {
-            spawn(async move {
+            spawn(async move  {
                 if let Some(wrapper) = cloned_wrapper.upgrade() {
                     let client = DownloaderClient(wrapper);
-                    client.start_download(target).await;
+                    client.next().await
                 }
             }.boxed());
-        } else {
-            lock.queue.add(target).expect("Cannot add target to download queue.");
         }
     }
 
@@ -73,12 +72,13 @@ impl DownloaderClient {
         let cloned_wrapper = Arc::clone(&self.0);
         let target = Self::decode_target(target);
 
+        let id = target["id"].to_string();
         let url = target["url"].to_string();
         let total_size = target["total_size"].as_f64().unwrap();
         let file_path = target["file_path"].to_string();
 
         let mut lock = self.0.lock().await;
-        lock.current_target = format!("{{\"url\":\"{}\",\"total_size\":{},\"file_path\":\"{}\"}}", url, total_size, file_path);
+        lock.current_target = format!("{{\"id\":\"{}\",\"url\":\"{}\",\"total_size\":{},\"file_path\":\"{}\"}}", id, url, total_size, file_path);
 
         println!("current target : {}", lock.current_target);
         print!("download starting..");
@@ -97,28 +97,29 @@ impl DownloaderClient {
         println!("decode started.");
         let lock = self.0.lock().await;
 
-        println!("target: {}", lock.current_target);
-
         if lock.current_target.is_empty() {
             return "No current target".to_string();
         }
 
-        let decoded = match json::parse(&lock.current_target) {
-            Ok(value) => value,
+        println!("Caught target before endcode: {}", lock.current_target);
+
+        let object_target = match json::parse(&lock.current_target) {
+            Ok(parsed) => parsed,
             Err(e) => {
                 println!("Error parsing JSON: {}", e);
-                return "Error parsing current target".to_string();
+                return "Error parsing JSON".to_string();
             }
         };
 
-        println!("decoded: {}", json::stringify(decoded.clone()));
+        let target_string = json::stringify(json::object! {
+            id: object_target["id"].clone(),
+            speed: lock.current_speed,
+            percent: lock.current_percent
+        });
 
-        let info_object = object! {
-            id: decoded["id"].to_string(),
-            speed: lock.current_speed.to_string(),
-            percent: lock.current_percent.to_string()
-        };
-        json::stringify(info_object)
+        println!("Caught target: {}", target_string);
+
+        target_string
     }
 
     pub async fn pause_download(&self) {
@@ -221,10 +222,11 @@ impl DownloaderClient {
             if elapsed_time > 0.1 {
                 let speed = downloaded_bytes as f64 / elapsed_time * 10.0;
                 let percent: f64 = (downloaded_bytes as f64 / total_size) * 100.0;
-                println!("Download speed: {:.2} KB/s, Progress: {:.0}%", speed / 1024.0, percent);
-                println!("Downloaded: {}b, Total: {}b", downloaded_bytes, total_size);
                 lock.current_percent = percent;
                 lock.current_speed = (speed / 1024.0).floor();
+            }
+            if elapsed_time > 1.0 {
+                println!("percent : {}, speed: {}", lock.current_percent, lock.current_speed);
             }
         }
 
@@ -273,15 +275,19 @@ impl DownloaderClient {
     pub async fn next(&self) {
         println!("calling next download..");
         let mut lock = self.0.lock().await;
-        if let Ok(next_target) = lock.queue.remove() {
-            lock.next_target = next_target.clone();
-            let cloned_self = Arc::clone(&self.0);
-            tokio::spawn(async move {
-                let client = DownloaderClient(cloned_self);
-                client.start_download(next_target).await;
-            });
-        } else {
-            lock.status = DownloadStatus::Pending;
+        match lock.queue.remove() {
+            Ok(next_target) => {
+                lock.next_target = next_target.clone();
+                let cloned_self = Arc::clone(&self.0);
+                tokio::spawn(async move {
+                    let client = DownloaderClient(cloned_self);
+                    client.start_download(next_target).await
+                });
+            },
+            Err(e) => {
+                println!("Error removing from queue: {}", e);
+                lock.status = DownloadStatus::Pending;
+            }
         }
     }
 }
