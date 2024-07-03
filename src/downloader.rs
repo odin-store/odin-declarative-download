@@ -99,15 +99,14 @@ impl DownloaderClient {
         if lock.current_target.is_empty() {
             return "No current target".to_string();
         }
-
-        let object_target = match json::parse(&lock.current_target) {
+        let current_target = lock.current_target.replace("\\", "/");
+        let object_target = match json::parse(&current_target) {
             Ok(parsed) => parsed,
             Err(e) => {
-                println!("Error parsing JSON: {}, Target : {}", e, lock.current_target);
+                println!("Error parsing JSON: {}, Target : {}", e, current_target);
                 return "Error parsing JSON".to_string();
             }
         };
-
         let target_string = json::stringify(json::object! {
             id: object_target["id"].clone(),
             speed: lock.current_speed,
