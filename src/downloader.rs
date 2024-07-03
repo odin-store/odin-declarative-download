@@ -94,14 +94,11 @@ impl DownloaderClient {
     }
 
     pub async fn get_info(&self) -> String {
-        println!("decode started.");
         let lock = self.0.lock().await;
 
         if lock.current_target.is_empty() {
             return "No current target".to_string();
         }
-
-        println!("Caught target before endcode: {}", lock.current_target);
 
         let object_target = match json::parse(&lock.current_target) {
             Ok(parsed) => parsed,
@@ -116,8 +113,6 @@ impl DownloaderClient {
             speed: lock.current_speed,
             percent: lock.current_percent
         });
-
-        println!("Caught target: {}", target_string);
 
         target_string
     }
