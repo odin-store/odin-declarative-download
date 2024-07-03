@@ -103,7 +103,7 @@ impl DownloaderClient {
         let object_target = match json::parse(&lock.current_target) {
             Ok(parsed) => parsed,
             Err(e) => {
-                println!("Error parsing JSON: {}", e);
+                println!("Error parsing JSON: {}, Target : {}", e, lock.current_target);
                 return "Error parsing JSON".to_string();
             }
         };
@@ -139,13 +139,10 @@ impl DownloaderClient {
             Ok(decoded_bytes) => match String::from_utf8(decoded_bytes) {
                 Ok(decoded_str) => {
                     println!("decoded : {}", decoded_str);
-                    match json::parse(&decoded_str) {
-                        Ok(parsed_json) => parsed_json,
-                        Err(e) => {
-                            println!("Error parsing JSON: {}", e);
-                            JsonValue::Null
-                        }
-                    }
+                    json::parse(&decoded_str).unwrap_or_else(|e| {
+                        println!("Error parsing JSON: {}", e);
+                        JsonValue::Null
+                    })
                 }
                 Err(e) => {
                     println!("Error converting bytes to string: {}", e);
